@@ -100,10 +100,28 @@ endif()
 add_subdirectory(${SRC}/fmtlib EXCLUDE_FROM_ALL)
 add_subdirectory(${SRC}/pcre EXCLUDE_FROM_ALL)
 add_subdirectory(${SRC}/libpng EXCLUDE_FROM_ALL)
-add_subdirectory(${SRC}/expat/expat EXCLUDE_FROM_ALL)
-add_subdirectory(${SRC}/boringssl EXCLUDE_FROM_ALL)
+add_subdirectory(${SRC}/expat EXCLUDE_FROM_ALL)
+# boringssl: not needed by build-tools (aapt/aapt2/aidl/zipalign/dexdump/split-select)
+# add_subdirectory(${SRC}/boringssl EXCLUDE_FROM_ALL)
 add_subdirectory(${SRC}/jsoncpp EXCLUDE_FROM_ALL)
-add_subdirectory(${SRC}/zopfli EXCLUDE_FROM_ALL)
+# zopfli: AOSP CMakeLists.txt only builds executables, but zipalign needs
+# libzopfli as a static library. Build it manually from source files.
+# add_subdirectory(${SRC}/zopfli EXCLUDE_FROM_ALL)
+add_library(zopfli STATIC
+    ${SRC}/zopfli/src/zopfli/blocksplitter.c
+    ${SRC}/zopfli/src/zopfli/cache.c
+    ${SRC}/zopfli/src/zopfli/deflate.c
+    ${SRC}/zopfli/src/zopfli/gzip_container.c
+    ${SRC}/zopfli/src/zopfli/hash.c
+    ${SRC}/zopfli/src/zopfli/katajainen.c
+    ${SRC}/zopfli/src/zopfli/lz77find.c
+    ${SRC}/zopfli/src/zopfli/squeeze.c
+    ${SRC}/zopfli/src/zopfli/tree.c
+    ${SRC}/zopfli/src/zopfli/util.c
+    ${SRC}/zopfli/src/zopfli/zlib_container.c
+    ${SRC}/zopfli/src/zopfli/zopfli_lib.c
+)
+target_include_directories(zopfli PUBLIC ${SRC}/zopfli/src)
 add_subdirectory(${SRC}/googletest EXCLUDE_FROM_ALL)
 
 # ---- AOSP internal libraries + tools ----
