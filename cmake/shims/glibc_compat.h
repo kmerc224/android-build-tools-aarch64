@@ -21,18 +21,20 @@
 // Stub __builtin_available macro
 #define __builtin_available(...) (0)
 
-// AOSP uses C11 atomic typedef names in C++ TUs
-// These are normally provided by stdatomic.h in C, but C++ needs help
-#ifdef __cplusplus
+// AOSP C++ atomic type compatibility
+// Clang supports _Atomic as a type qualifier in C++; GCC does not.
+// Use std::atomic for GCC C++ to provide the same typedefs.
+#if defined(__cplusplus) && defined(__GNUC__) && !defined(__clang__)
+#include <atomic>
 #include <cstdint>
-typedef _Atomic(uint8_t) atomic_uint_least8_t;
-typedef _Atomic(uint16_t) atomic_uint_least16_t;
-typedef _Atomic(uint32_t) atomic_uint_least32_t;
-typedef _Atomic(uint64_t) atomic_uint_least64_t;
-typedef _Atomic(int8_t) atomic_int_least8_t;
-typedef _Atomic(int16_t) atomic_int_least16_t;
-typedef _Atomic(int32_t) atomic_int_least32_t;
-typedef _Atomic(int64_t) atomic_int_least64_t;
+typedef std::atomic<uint8_t>  atomic_uint_least8_t;
+typedef std::atomic<uint16_t> atomic_uint_least16_t;
+typedef std::atomic<uint32_t> atomic_uint_least32_t;
+typedef std::atomic<uint64_t> atomic_uint_least64_t;
+typedef std::atomic<int8_t>   atomic_int_least8_t;
+typedef std::atomic<int16_t>  atomic_int_least16_t;
+typedef std::atomic<int32_t>  atomic_int_least32_t;
+typedef std::atomic<int64_t>  atomic_int_least64_t;
 #endif
 
 // Ensure common headers are included

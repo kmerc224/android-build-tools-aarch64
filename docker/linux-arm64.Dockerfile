@@ -1,8 +1,7 @@
 # Build environment for cross-compiling Android SDK build-tools to
 # linux-glibc-arm64.
 #
-# Works on x86_64 and arm64 hosts. On x86_64 hosts, gcc-aarch64-linux-gnu
-# cross-compiles to arm64. On arm64 hosts, it runs natively.
+# Works on x86_64 hosts. gcc-aarch64-linux-gnu cross-compiles to arm64.
 #
 # Base image is Debian 12 (Bookworm) - glibc 2.36, GCC 12.2
 FROM debian:bookworm-slim
@@ -10,6 +9,9 @@ FROM debian:bookworm-slim
 ENV DEBIAN_FRONTEND=noninteractive \
     LANG=C.UTF-8 \
     LC_ALL=C.UTF-8
+
+# Add arm64 architecture for cross-compilation libraries
+RUN dpkg --add-architecture arm64
 
 RUN apt-get update && apt-get install -y --no-install-recommends \
         bison \
@@ -25,7 +27,6 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
         gperf \
         gcc-aarch64-linux-gnu \
         g++-aarch64-linux-gnu \
-        libssl-dev \
         ninja-build \
         pkg-config \
         protobuf-compiler \
@@ -35,6 +36,7 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
         unzip \
         zip \
         zlib1g-dev \
+        zlib1g-dev:arm64 \
     && rm -rf /var/lib/apt/lists/*
 
 # Non-root user
@@ -54,6 +56,7 @@ RUN git config --global user.name "AOSP Builder" \
     && git config --global user.email "builder@android-build-tools.local"
 
 ENV USE_CCACHE=1 \
-    CCACHE_DIR=/workspace/.ccache
+    CCACHE_DIR=/workspace/.ccache \
+    PKG_CONFIG_LIBDIR=/usr/lib/aarch64-linux-gnu/pkgconfig:/usr/share/pkgconfig
 
 WORKDIR /workspace
