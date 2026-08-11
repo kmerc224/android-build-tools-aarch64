@@ -101,34 +101,38 @@ def clone_official_protobuf(src_dir: Path) -> None:
     protobuf_dir = src_dir / "protobuf"
     protobuf_tag = "v3.19.6"
 
-    if protobuf_dir.is_dir() and (protobuf_dir / "CMakeLists.txt").exists():
+    # Check if we already have a good clone (must have cmake/ subdir)
+    if (protobuf_dir.is_dir()
+            and (protobuf_dir / "cmake" / "CMakeLists.txt").exists()
+            and (protobuf_dir / "src").is_dir()):
         log(f"official protobuf already cloned at {protobuf_tag}")
-        return
+    else:
+        if protobuf_dir.exists():
+            log(f"removing stale/incomplete protobuf directory")
+            shutil.rmtree(protobuf_dir)
 
-    if protobuf_dir.exists():
-        shutil.rmtree(protobuf_dir)
-
-    protobuf_dir.parent.mkdir(parents=True, exist_ok=True)
-    log(f"cloning official protobuf {protobuf_tag} from GitHub...")
-    subprocess.run(
-        [
-            "git", "clone",
-            "-c", "advice.detachedHead=false",
-            "--depth", "1",
-            "--branch", protobuf_tag,
-            "https://github.com/protocolbuffers/protobuf.git",
-            str(protobuf_dir),
-        ],
-        check=True,
-    )
-    log(f"cloned official protobuf {protobuf_tag}")
+        protobuf_dir.parent.mkdir(parents=True, exist_ok=True)
+        log(f"cloning official protobuf {protobuf_tag} from GitHub...")
+        subprocess.run(
+            [
+                "git", "clone",
+                "-c", "advice.detachedHead=false",
+                "--depth", "1",
+                "--branch", protobuf_tag,
+                "https://github.com/protocolbuffers/protobuf.git",
+                str(protobuf_dir),
+            ],
+            check=True,
+        )
+        log(f"cloned official protobuf {protobuf_tag}")
 
     # In v3.19.x, CMakeLists.txt, .cmake helpers, and .in template files all
     # live in cmake/ subdir with relative paths (../src, ../configure.ac)
     # designed for that location. Copy EVERYTHING to root and fix paths so
     # add_subdirectory(src/protobuf) works correctly.
     cmake_subdir = protobuf_dir / "cmake"
-    if cmake_subdir.is_dir() and not (protobuf_dir / "CMakeLists.txt").exists():
+    if cmake_subdir.is_dir():
+        # Always re-patch (cache may restore stale/missing files)
         patched = 0
 
         def _fix_paths(text: str) -> str:
@@ -151,10 +155,9 @@ def clone_official_protobuf(src_dir: Path) -> None:
         # Copy .in template files (protobuf-config.cmake.in, etc.)
         for f in list(cmake_subdir.glob("*.in")) + list(cmake_subdir.glob("*.bat.in")):
             dst = protobuf_dir / f.name
-            if not dst.exists():
-                text = _fix_paths(f.read_text())
-                dst.write_text(text)
-                patched += 1
+            text = _fix_paths(f.read_text())
+            dst.write_text(text)
+            patched += 1
 
         log(f"patched protobuf cmake: copied {patched} files from cmake/ to root with fixed paths")
 

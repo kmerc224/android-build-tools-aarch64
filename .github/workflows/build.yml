@@ -47,14 +47,6 @@ jobs:
           restore-keys: |
             ccache-${{ env.AOSP_BRANCH }}-
 
-      - name: Cache source code
-        uses: actions/cache@v4
-        with:
-          path: src
-          key: src-${{ env.AOSP_BRANCH }}-${{ github.sha }}
-          restore-keys: |
-            src-${{ env.AOSP_BRANCH }}-
-
       - name: Fix workspace permissions
         run: |
           sudo chown -R 1000:1000 ${{ github.workspace }}
