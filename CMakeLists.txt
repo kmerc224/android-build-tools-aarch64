@@ -107,20 +107,10 @@ add_subdirectory(${SRC}/jsoncpp EXCLUDE_FROM_ALL)
 # zopfli: AOSP CMakeLists.txt only builds executables, but zipalign needs
 # libzopfli as a static library. Build it manually from source files.
 # add_subdirectory(${SRC}/zopfli EXCLUDE_FROM_ALL)
-add_library(zopfli STATIC
-    ${SRC}/zopfli/src/zopfli/blocksplitter.c
-    ${SRC}/zopfli/src/zopfli/cache.c
-    ${SRC}/zopfli/src/zopfli/deflate.c
-    ${SRC}/zopfli/src/zopfli/gzip_container.c
-    ${SRC}/zopfli/src/zopfli/hash.c
-    ${SRC}/zopfli/src/zopfli/katajainen.c
-    ${SRC}/zopfli/src/zopfli/lz77find.c
-    ${SRC}/zopfli/src/zopfli/squeeze.c
-    ${SRC}/zopfli/src/zopfli/tree.c
-    ${SRC}/zopfli/src/zopfli/util.c
-    ${SRC}/zopfli/src/zopfli/zlib_container.c
-    ${SRC}/zopfli/src/zopfli/zopfli_lib.c
-)
+file(GLOB ZOPFLI_LIB_SRCS "${SRC}/zopfli/src/zopfli/*.c")
+# Exclude the main executable source (contains main())
+list(FILTER ZOPFLI_LIB_SRCS EXCLUDE REGEX ".*zopfli_main\\.c$|.*zopfli_bin\\.c$")
+add_library(zopfli STATIC ${ZOPFLI_LIB_SRCS})
 target_include_directories(zopfli PUBLIC ${SRC}/zopfli/src)
 add_subdirectory(${SRC}/googletest EXCLUDE_FROM_ALL)
 

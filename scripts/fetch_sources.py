@@ -126,20 +126,17 @@ def clone_official_protobuf(src_dir: Path) -> None:
         )
         log(f"cloned official protobuf {protobuf_tag}")
 
-    # In v3.19.x, CMakeLists.txt, .cmake helpers, and .in template files all
-    # live in cmake/ subdir with relative paths (../src, ../configure.ac)
-    # designed for that location. Copy EVERYTHING to root and fix paths so
-    # add_subdirectory(src/protobuf) works correctly.
+    # In v3.19.x, CMakeLists.txt and helper .cmake/.in files live in cmake/
+    # subdir. The key variable protobuf_source_dir is computed as:
+    #   get_filename_component(protobuf_source_dir ${protobuf_SOURCE_DIR} PATH)
+    # When in cmake/, PATH gives protobuf_root. At root, it gives the wrong
+    # parent. We fix this by overriding protobuf_source_dir.
     cmake_subdir = protobuf_dir / "cmake"
     if cmake_subdir.is_dir():
-        # Always re-patch (cache may restore stale/missing files)
         patched = 0
 
         def _fix_paths(text: str) -> str:
             """Fix relative paths from cmake/ context to root context."""
-            text = text.replace("${CMAKE_CURRENT_SOURCE_DIR}/../src",
-                               "${CMAKE_CURRENT_SOURCE_DIR}/src")
-            text = text.replace('"../src', '"${CMAKE_CURRENT_SOURCE_DIR}/src')
             text = text.replace("../configure.ac", "configure.ac")
             return text
 
@@ -147,6 +144,11 @@ def clone_official_protobuf(src_dir: Path) -> None:
         cmakelists = cmake_subdir / "CMakeLists.txt"
         if cmakelists.exists():
             text = _fix_paths(cmakelists.read_text())
+            # Fix protobuf_source_dir: override to current source dir
+            text = text.replace(
+                "get_filename_component(protobuf_source_dir ${protobuf_SOURCE_DIR} PATH)",
+                "set(protobuf_source_dir ${CMAKE_CURRENT_SOURCE_DIR})"
+            )
             text = text.replace("${CMAKE_CURRENT_SOURCE_DIR}/../cmake",
                                "${CMAKE_CURRENT_SOURCE_DIR}/cmake")
             (protobuf_dir / "CMakeLists.txt").write_text(text)
@@ -158,7 +160,7 @@ def clone_official_protobuf(src_dir: Path) -> None:
             (protobuf_dir / f.name).write_text(text)
             patched += 1
 
-        # Copy .in template files (protobuf-config.cmake.in, etc.)
+        # Copy .in template files
         for f in list(cmake_subdir.glob("*.in")) + list(cmake_subdir.glob("*.bat.in")):
             dst = protobuf_dir / f.name
             text = _fix_paths(f.read_text())
