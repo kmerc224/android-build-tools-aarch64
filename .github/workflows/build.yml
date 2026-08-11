@@ -64,6 +64,16 @@ jobs:
             android-build-tools \
             python3 scripts/fetch_sources.py
 
+      - name: Debug - verify protobuf files
+        run: |
+          echo "=== Checking protobuf directory ==="
+          ls -la src/protobuf/CMakeLists.txt 2>&1 || echo "ROOT CMakeLists.txt MISSING"
+          ls -la src/protobuf/cmake/CMakeLists.txt 2>&1 || echo "cmake/ CMakeLists.txt MISSING"
+          echo "=== Files in src/protobuf/ root ==="
+          ls src/protobuf/*.cmake src/protobuf/*.in src/protobuf/CMakeLists.txt 2>&1 || echo "No cmake files found at root"
+          echo "=== Head of src/protobuf/CMakeLists.txt ==="
+          head -5 src/protobuf/CMakeLists.txt 2>&1 || echo "Cannot read CMakeLists.txt"
+
       - name: Build build-tools for aarch64
         run: |
           # Use system protoc (pre-installed in Docker image via protobuf-compiler)
