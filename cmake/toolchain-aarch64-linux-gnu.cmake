@@ -9,9 +9,22 @@ set(CMAKE_C_COMPILER aarch64-linux-gnu-gcc)
 set(CMAKE_CXX_COMPILER aarch64-linux-gnu-g++)
 set(CMAKE_ASM_COMPILER aarch64-linux-gnu-gcc)
 
-# Multiarch search paths for target environment
-# Debian/Ubuntu multiarch installs arm64 libs in /usr/lib/aarch64-linux-gnu/
-# Cross-compiler itself lives in /usr/aarch64-linux-gnu/
+# Debian/Ubuntu multiarch layout:
+#   Cross-compiler:  /usr/aarch64-linux-gnu/
+#   Multiarch libs:  /usr/lib/aarch64-linux-gnu/
+#   Multiarch inc:   /usr/include/aarch64-linux-gnu/
+#   Host includes:   /usr/include/
+#
+# The cross-compiler's default sysroot may not cover the multiarch
+# directories, so we add them explicitly via compiler/linker flags.
+set(MULTIARCH_INCLUDE /usr/include/aarch64-linux-gnu)
+set(MULTIARCH_LIB /usr/lib/aarch64-linux-gnu)
+
+# Tell the compiler about multiarch include/lib paths
+add_compile_options(-isystem ${MULTIARCH_INCLUDE})
+add_link_options(-L${MULTIARCH_LIB})
+
+# CMake find_* search paths
 set(CMAKE_FIND_ROOT_PATH
     /usr/aarch64-linux-gnu
     /usr/lib/aarch64-linux-gnu
@@ -26,6 +39,11 @@ set(CMAKE_FIND_ROOT_PATH_MODE_PROGRAM NEVER)
 set(CMAKE_FIND_ROOT_PATH_MODE_LIBRARY ONLY)
 set(CMAKE_FIND_ROOT_PATH_MODE_INCLUDE ONLY)
 set(CMAKE_FIND_ROOT_PATH_MODE_PACKAGE ONLY)
+
+# Also add to CMAKE_INCLUDE_PATH / CMAKE_LIBRARY_PATH as extra hints
+# for find_path() and find_library()
+list(APPEND CMAKE_INCLUDE_PATH /usr/include/aarch64-linux-gnu)
+list(APPEND CMAKE_LIBRARY_PATH /usr/lib/aarch64-linux-gnu)
 
 # pkg-config for cross-compilation
 set(ENV{PKG_CONFIG_DIR} "")
