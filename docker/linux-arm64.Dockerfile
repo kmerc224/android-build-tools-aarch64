@@ -29,6 +29,7 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
         ninja-build \
         pkg-config \
         protobuf-compiler \
+        libprotobuf-dev \
         python3 \
         python-is-python3 \
         sudo \

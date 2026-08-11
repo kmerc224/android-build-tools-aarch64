@@ -72,23 +72,9 @@ jobs:
             android-build-tools \
             python3 scripts/fetch_sources.py
 
-      - name: Build host protoc
-        run: |
-          docker run --rm \
-            --user builder \
-            -v ${{ github.workspace }}:/workspace \
-            -w /workspace \
-            android-build-tools \
-            bash -c "
-              mkdir -p build/host-protoc && \
-              cmake -S src/protobuf -B build/host-protoc -GNinja \
-                -Dprotobuf_BUILD_TESTS=OFF \
-                -Dprotobuf_BUILD_EXAMPLES=OFF && \
-              ninja -C build/host-protoc protoc
-            "
-
       - name: Build build-tools for aarch64
         run: |
+          # Use system protoc (pre-installed in Docker image via protobuf-compiler)
           docker run --rm \
             --user builder \
             -v ${{ github.workspace }}:/workspace \
@@ -97,6 +83,7 @@ jobs:
             -e BUILD_DIR=/workspace/build/linux-arm64 \
             -e OUTPUT_DIR=/workspace/out/linux-arm64 \
             -e BUILD_TOOLS_LABEL=${{ env.BUILD_TOOLS_LABEL }} \
+            -e PROTOC_PATH=/usr/bin/protoc \
             -e JOBS=4 \
             android-build-tools \
             python3 scripts/build_linux_arm64.py
