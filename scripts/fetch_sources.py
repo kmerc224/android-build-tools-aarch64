@@ -138,6 +138,11 @@ def clone_official_protobuf(src_dir: Path) -> None:
         def _fix_paths(text: str) -> str:
             """Fix relative paths from cmake/ context to root context."""
             text = text.replace("../configure.ac", "configure.ac")
+            text = text.replace("${protobuf_SOURCE_DIR}/../src/",
+                                "${protobuf_source_dir}/src/")
+            text = text.replace('"../src/', '"${protobuf_source_dir}/src/')
+            text = text.replace("'../src/", "'${protobuf_source_dir}/src/")
+            text = text.replace("../examples/", "${protobuf_source_dir}/examples/")
             return text
 
         # Copy and patch CMakeLists.txt

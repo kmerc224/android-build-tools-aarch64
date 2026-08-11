@@ -18,6 +18,14 @@ def fix_paths(text: str) -> str:
     """Fix relative paths from cmake/ context to root context."""
     # ../configure.ac was relative to cmake/ subdir; now at root
     text = text.replace("../configure.ac", "configure.ac")
+    # ../src/ was relative to cmake/ subdir; now use protobuf_source_dir
+    text = text.replace("${protobuf_SOURCE_DIR}/../src/",
+                        "${protobuf_source_dir}/src/")
+    # Bare ../src/ references (e.g. "../src/Makefile.am", "../src/${_file}")
+    text = text.replace('"../src/', '"${protobuf_source_dir}/src/')
+    text = text.replace("'../src/", "'${protobuf_source_dir}/src/")
+    # ../examples/ reference
+    text = text.replace("../examples/", "${protobuf_source_dir}/examples/")
     return text
 
 
