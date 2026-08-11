@@ -88,6 +88,38 @@ def install_shims(src_dir: Path, patch_dir: Path) -> None:
         print(f"  installed {filename} -> {rel_dest}")
 
 
+def clone_official_protobuf(src_dir: Path) -> None:
+    """Clone official protobuf (with CMake support) from GitHub.
+
+    AOSP's protobuf mirror lacks CMakeLists.txt, so we use the upstream
+    Google protobuf release which includes full CMake build support.
+    """
+    protobuf_dir = src_dir / "protobuf"
+    protobuf_tag = "v3.19.6"
+
+    if protobuf_dir.is_dir() and (protobuf_dir / "CMakeLists.txt").exists():
+        log(f"official protobuf already cloned at {protobuf_tag}")
+        return
+
+    if protobuf_dir.exists():
+        shutil.rmtree(protobuf_dir)
+
+    protobuf_dir.parent.mkdir(parents=True, exist_ok=True)
+    log(f"cloning official protobuf {protobuf_tag} from GitHub...")
+    subprocess.run(
+        [
+            "git", "clone",
+            "-c", "advice.detachedHead=false",
+            "--depth", "1",
+            "--branch", protobuf_tag,
+            "https://github.com/protocolbuffers/protobuf.git",
+            str(protobuf_dir),
+        ],
+        check=True,
+    )
+    log(f"cloned official protobuf {protobuf_tag}")
+
+
 def link_protobuf_submodules(src_dir: Path) -> None:
     """Link abseil-cpp into protobuf's third_party directory."""
     protobuf = src_dir / "protobuf"
@@ -96,8 +128,12 @@ def link_protobuf_submodules(src_dir: Path) -> None:
         return
 
     target = protobuf / "third_party" / "abseil-cpp"
-    if target.exists() or target.is_symlink():
-        return
+    # Remove existing (might be from protobuf source)
+    if target.is_symlink() or target.exists():
+        if target.is_symlink():
+            target.unlink()
+        elif target.is_dir():
+            shutil.rmtree(target)
 
     target.parent.mkdir(parents=True, exist_ok=True)
     target.symlink_to(Path("../../abseil-cpp"))
@@ -162,6 +198,7 @@ def main() -> int:
         return 1
 
     install_shims(src_dir, patch_dir)
+    clone_official_protobuf(src_dir)
     link_protobuf_submodules(src_dir)
     fix_aapt2_proto_paths(src_dir)
 

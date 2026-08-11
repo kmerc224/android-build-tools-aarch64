@@ -58,21 +58,30 @@ set(BUILD_SHARED_LIBS OFF CACHE BOOL "" FORCE)
 # ---- Protobuf (built from source for cross-compilation) ----
 # find_package(Protobuf) does not work during cross-compilation because only
 # host-architecture (x86_64) libraries are installed in the Docker image.
-# Instead, we build protobuf from the AOSP source tree for the target arch.
+# We use the official protobuf from GitHub (v3.19.6) which has CMake support.
+# AOSP's protobuf mirror lacks CMakeLists.txt.
 set(protobuf_BUILD_TESTS OFF CACHE BOOL "" FORCE)
 set(protobuf_BUILD_EXAMPLES OFF CACHE BOOL "" FORCE)
 set(protobuf_BUILD_SHARED_LIBS OFF CACHE BOOL "" FORCE)
 set(protobuf_WITH_ZLIB OFF CACHE BOOL "" FORCE)
-set(protobuf_ABSL_PROVIDER "module" CACHE STRING "" FORCE)
+# Use standalone abseil-cpp built below; tell protobuf NOT to build its own
+set(protobuf_ABSL_PROVIDER "none" CACHE STRING "" FORCE)
 
-# Use the host-architecture protoc (built separately or from system package)
-# for .proto code generation during the build.
+# Use the host-architecture protoc (from system package) for code generation
 if(DEFINED PROTOC_PATH)
     set(protobuf_PROTOC_EXE ${PROTOC_PATH} CACHE FILEPATH "" FORCE)
     message(STATUS "Using host protoc for protobuf codegen: ${PROTOC_PATH}")
 endif()
 
+# Build abseil-cpp first (protobuf depends on it)
 add_subdirectory(${SRC}/abseil-cpp EXCLUDE_FROM_ALL)
+
+# Protobuf expects an aggregate absl::absl target; create alias if missing
+if(NOT TARGET absl::absl)
+    add_library(absl::absl ALIAS absl_base)
+endif()
+
+# Build protobuf from official GitHub source (has CMakeLists.txt)
 add_subdirectory(${SRC}/protobuf EXCLUDE_FROM_ALL)
 
 # Create a namespaced alias so that existing target_link_libraries() calls
