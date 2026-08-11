@@ -69,6 +69,11 @@ def build_target(src_dir: Path, build_dir: Path, protoc: Path) -> None:
             "-GNinja",
             f"-DCMAKE_TOOLCHAIN_FILE={toolchain}",
             f"-DPROTOC_PATH={protoc}",
+            # Force protobuf options via command line (cache init before any
+            # CMakeLists.txt processing)
+            "-Dprotobuf_WITH_ZLIB=OFF",
+            "-Dprotobuf_BUILD_TESTS=OFF",
+            "-Dprotobuf_BUILD_EXAMPLES=OFF",
         ],
         check=True,
     )
