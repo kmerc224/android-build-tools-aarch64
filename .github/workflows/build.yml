@@ -24,8 +24,6 @@ env:
 jobs:
   build:
     runs-on: ubuntu-latest
-    # Use ARM64 runner if available, otherwise cross-compile on x86_64
-    # runs-on: ubuntu-24.04-arm  # Uncomment for native ARM64 build
 
     steps:
       - name: Checkout repository
@@ -57,9 +55,14 @@ jobs:
           restore-keys: |
             src-${{ env.AOSP_BRANCH }}-
 
+      - name: Fix workspace permissions
+        run: |
+          sudo chown -R 1000:1000 ${{ github.workspace }}
+
       - name: Fetch AOSP sources
         run: |
           docker run --rm \
+            --user builder \
             -v ${{ github.workspace }}:/workspace \
             -w /workspace \
             -e AOSP_BRANCH=${{ env.AOSP_BRANCH }} \
@@ -72,6 +75,7 @@ jobs:
       - name: Build host protoc
         run: |
           docker run --rm \
+            --user builder \
             -v ${{ github.workspace }}:/workspace \
             -w /workspace \
             android-build-tools \
@@ -86,6 +90,7 @@ jobs:
       - name: Build build-tools for aarch64
         run: |
           docker run --rm \
+            --user builder \
             -v ${{ github.workspace }}:/workspace \
             -w /workspace \
             -e SRC_DIR=/workspace/src \
