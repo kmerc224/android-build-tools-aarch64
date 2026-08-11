@@ -32,12 +32,18 @@ def main() -> int:
 
     patched = 0
 
-    # Copy and patch all .cmake files (includes CMakeLists.txt)
+    # Copy and patch CMakeLists.txt
+    cmakelists = cmake_subdir / "CMakeLists.txt"
+    if cmakelists.exists():
+        text = fix_paths(cmakelists.read_text())
+        text = text.replace("${CMAKE_CURRENT_SOURCE_DIR}/../cmake",
+                            "${CMAKE_CURRENT_SOURCE_DIR}/cmake")
+        (protobuf_dir / "CMakeLists.txt").write_text(text)
+        patched += 1
+
+    # Copy and patch all .cmake helper files
     for f in cmake_subdir.glob("*.cmake"):
         text = fix_paths(f.read_text())
-        if f.name == "CMakeLists.txt":
-            text = text.replace("${CMAKE_CURRENT_SOURCE_DIR}/../cmake",
-                                "${CMAKE_CURRENT_SOURCE_DIR}/cmake")
         (protobuf_dir / f.name).write_text(text)
         patched += 1
 

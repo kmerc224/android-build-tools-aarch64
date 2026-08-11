@@ -143,12 +143,18 @@ def clone_official_protobuf(src_dir: Path) -> None:
             text = text.replace("../configure.ac", "configure.ac")
             return text
 
-        # Copy and patch all .cmake files
+        # Copy and patch CMakeLists.txt
+        cmakelists = cmake_subdir / "CMakeLists.txt"
+        if cmakelists.exists():
+            text = _fix_paths(cmakelists.read_text())
+            text = text.replace("${CMAKE_CURRENT_SOURCE_DIR}/../cmake",
+                               "${CMAKE_CURRENT_SOURCE_DIR}/cmake")
+            (protobuf_dir / "CMakeLists.txt").write_text(text)
+            patched += 1
+
+        # Copy and patch all .cmake helper files
         for f in cmake_subdir.glob("*.cmake"):
             text = _fix_paths(f.read_text())
-            if f.name == "CMakeLists.txt":
-                text = text.replace("${CMAKE_CURRENT_SOURCE_DIR}/../cmake",
-                                   "${CMAKE_CURRENT_SOURCE_DIR}/cmake")
             (protobuf_dir / f.name).write_text(text)
             patched += 1
 
