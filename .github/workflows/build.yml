@@ -69,6 +69,8 @@ jobs:
           # Files written inside Docker containers may not persist to the host
           # filesystem on all runners. Run the protobuf cmake patch directly
           # on the host to ensure files are visible to subsequent steps.
+          # Fix permissions first (Docker creates files as uid 1000).
+          sudo chown -R $(id -u):$(id -g) src/protobuf/
           python3 scripts/patch_protobuf_cmake.py
 
       - name: Build build-tools for aarch64
