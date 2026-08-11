@@ -93,6 +93,10 @@ def clone_official_protobuf(src_dir: Path) -> None:
 
     AOSP's protobuf mirror lacks CMakeLists.txt, so we use the upstream
     Google protobuf release which includes full CMake build support.
+
+    In protobuf v3.19.x, CMakeLists.txt lives in cmake/ subdirectory with
+    paths relative to that (e.g. ../src). We copy it to the root and fix
+    the paths so add_subdirectory(src/protobuf) works correctly.
     """
     protobuf_dir = src_dir / "protobuf"
     protobuf_tag = "v3.19.6"
@@ -118,6 +122,22 @@ def clone_official_protobuf(src_dir: Path) -> None:
         check=True,
     )
     log(f"cloned official protobuf {protobuf_tag}")
+
+    # In v3.19.x, CMakeLists.txt is in cmake/ subdir with ../src paths.
+    # Copy it to root and fix paths so add_subdirectory(src/protobuf) works.
+    cmake_src = protobuf_dir / "cmake" / "CMakeLists.txt"
+    cmake_dst = protobuf_dir / "CMakeLists.txt"
+    if cmake_src.exists() and not cmake_dst.exists():
+        text = cmake_src.read_text()
+        # ../src (from cmake/) -> src (from root)
+        text = text.replace("${CMAKE_CURRENT_SOURCE_DIR}/../src",
+                           "${CMAKE_CURRENT_SOURCE_DIR}/src")
+        text = text.replace("${CMAKE_CURRENT_SOURCE_DIR}/../cmake",
+                           "${CMAKE_CURRENT_SOURCE_DIR}/cmake")
+        # Also fix bare ../src references (not prefixed with CMAKE_CURRENT_SOURCE_DIR)
+        text = text.replace('"../src', '"${CMAKE_CURRENT_SOURCE_DIR}/src')
+        cmake_dst.write_text(text)
+        log("patched protobuf CMakeLists.txt: copied from cmake/ to root with fixed paths")
 
 
 def link_protobuf_submodules(src_dir: Path) -> None:
