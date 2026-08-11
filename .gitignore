@@ -1,0 +1,21 @@
+# Build outputs
+/build/
+/out/
+/dist/
+
+# Cloned AOSP sources
+/src/
+
+# ccache
+/.ccache/
+
+# IDE files
+.vscode/
+.idea/
+*.swp
+*.swo
+*~
+
+# OS files
+.DS_Store
+Thumbs.db

@@ -1,0 +1,146 @@
+name: Build Android build-tools for aarch64
+
+on:
+  push:
+    branches: [main]
+    tags: ['v*']
+  pull_request:
+    branches: [main]
+  workflow_dispatch:
+    inputs:
+      aosp_branch:
+        description: 'AOSP branch/tag to build from (e.g. platform-tools-33.0.1)'
+        required: true
+        default: 'platform-tools-33.0.1'
+      build_tools_label:
+        description: 'Build tools version label'
+        required: true
+        default: '33.0.1'
+
+env:
+  AOSP_BRANCH: ${{ github.event.inputs.aosp_branch || 'platform-tools-33.0.1' }}
+  BUILD_TOOLS_LABEL: ${{ github.event.inputs.build_tools_label || '33.0.1' }}
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    # Use ARM64 runner if available, otherwise cross-compile on x86_64
+    # runs-on: ubuntu-24.04-arm  # Uncomment for native ARM64 build
+
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Set up Docker Buildx
+        uses: docker/setup-buildx-action@v3
+
+      - name: Build Docker image
+        run: |
+          docker build \
+            -t android-build-tools \
+            -f docker/linux-arm64.Dockerfile \
+            .
+
+      - name: Cache ccache
+        uses: actions/cache@v4
+        with:
+          path: .ccache
+          key: ccache-${{ env.AOSP_BRANCH }}-${{ github.sha }}
+          restore-keys: |
+            ccache-${{ env.AOSP_BRANCH }}-
+
+      - name: Cache source code
+        uses: actions/cache@v4
+        with:
+          path: src
+          key: src-${{ env.AOSP_BRANCH }}-${{ github.sha }}
+          restore-keys: |
+            src-${{ env.AOSP_BRANCH }}-
+
+      - name: Fetch AOSP sources
+        run: |
+          docker run --rm \
+            -v ${{ github.workspace }}:/workspace \
+            -w /workspace \
+            -e AOSP_BRANCH=${{ env.AOSP_BRANCH }} \
+            -e SRC_DIR=/workspace/src \
+            -e REPOS_JSON=/workspace/repos.json \
+            -e PATCH_DIR=/workspace/patches \
+            android-build-tools \
+            python3 scripts/fetch_sources.py
+
+      - name: Build host protoc
+        run: |
+          docker run --rm \
+            -v ${{ github.workspace }}:/workspace \
+            -w /workspace \
+            android-build-tools \
+            bash -c "
+              mkdir -p build/host-protoc && \
+              cmake -S src/protobuf -B build/host-protoc -GNinja \
+                -Dprotobuf_BUILD_TESTS=OFF \
+                -Dprotobuf_BUILD_EXAMPLES=OFF && \
+              ninja -C build/host-protoc protoc
+            "
+
+      - name: Build build-tools for aarch64
+        run: |
+          docker run --rm \
+            -v ${{ github.workspace }}:/workspace \
+            -w /workspace \
+            -e SRC_DIR=/workspace/src \
+            -e BUILD_DIR=/workspace/build/linux-arm64 \
+            -e OUTPUT_DIR=/workspace/out/linux-arm64 \
+            -e BUILD_TOOLS_LABEL=${{ env.BUILD_TOOLS_LABEL }} \
+            -e JOBS=4 \
+            android-build-tools \
+            python3 scripts/build_linux_arm64.py
+
+      - name: Verify binaries
+        run: |
+          echo "=== Checking binary architectures ==="
+          for tool in aapt aapt2 aidl zipalign dexdump split-select; do
+            if [ -f "out/linux-arm64/$tool" ]; then
+              echo "--- $tool ---"
+              file out/linux-arm64/$tool
+            else
+              echo "WARNING: $tool not found"
+            fi
+          done
+
+      - name: Verify version
+        run: |
+          echo "=== source.properties ==="
+          cat out/linux-arm64/source.properties
+
+      - name: Create release archive
+        if: startsWith(github.ref, 'refs/tags/')
+        run: |
+          cd out/linux-arm64
+          tar -cJf ../../android-build-tools-${{ env.BUILD_TOOLS_LABEL }}-aarch64.tar.xz \
+            aapt aapt2 aidl zipalign dexdump split-select source.properties
+          cd ../..
+          sha256sum android-build-tools-${{ env.BUILD_TOOLS_LABEL }}-aarch64.tar.xz \
+            > android-build-tools-${{ env.BUILD_TOOLS_LABEL }}-aarch64.tar.xz.sha256
+
+      - name: Upload artifacts
+        uses: actions/upload-artifact@v4
+        with:
+          name: android-build-tools-${{ env.BUILD_TOOLS_LABEL }}-aarch64
+          path: |
+            out/linux-arm64/aapt
+            out/linux-arm64/aapt2
+            out/linux-arm64/aidl
+            out/linux-arm64/zipalign
+            out/linux-arm64/dexdump
+            out/linux-arm64/split-select
+            out/linux-arm64/source.properties
+
+      - name: Create GitHub Release
+        if: startsWith(github.ref, 'refs/tags/')
+        uses: softprops/action-gh-release@v2
+        with:
+          files: |
+            android-build-tools-${{ env.BUILD_TOOLS_LABEL }}-aarch64.tar.xz
+            android-build-tools-${{ env.BUILD_TOOLS_LABEL }}-aarch64.tar.xz.sha256
+          generate_release_notes: true
