@@ -55,18 +55,39 @@ endif()
 # ---- Third-party libraries ----
 set(BUILD_SHARED_LIBS OFF CACHE BOOL "" FORCE)
 
-# Use system protobuf (installed via protobuf-compiler and libprotobuf-dev)
-find_package(Protobuf REQUIRED)
-message(STATUS "Using system protobuf: ${Protobuf_VERSION}")
-message(STATUS "Protobuf libraries: ${Protobuf_LIBRARIES}")
-message(STATUS "Protobuf includes: ${Protobuf_INCLUDE_DIRS}")
+# ---- Protobuf (built from source for cross-compilation) ----
+# find_package(Protobuf) does not work during cross-compilation because only
+# host-architecture (x86_64) libraries are installed in the Docker image.
+# Instead, we build protobuf from the AOSP source tree for the target arch.
+set(protobuf_BUILD_TESTS OFF CACHE BOOL "" FORCE)
+set(protobuf_BUILD_EXAMPLES OFF CACHE BOOL "" FORCE)
+set(protobuf_BUILD_SHARED_LIBS OFF CACHE BOOL "" FORCE)
+set(protobuf_WITH_ZLIB OFF CACHE BOOL "" FORCE)
+set(protobuf_ABSL_PROVIDER "module" CACHE STRING "" FORCE)
 
-# Create an alias target for compatibility
-if(NOT TARGET protobuf::libprotobuf)
-    add_library(protobuf::libprotobuf ALIAS protobuf)
+# Use the host-architecture protoc (built separately or from system package)
+# for .proto code generation during the build.
+if(DEFINED PROTOC_PATH)
+    set(protobuf_PROTOC_EXE ${PROTOC_PATH} CACHE FILEPATH "" FORCE)
+    message(STATUS "Using host protoc for protobuf codegen: ${PROTOC_PATH}")
 endif()
 
 add_subdirectory(${SRC}/abseil-cpp EXCLUDE_FROM_ALL)
+add_subdirectory(${SRC}/protobuf EXCLUDE_FROM_ALL)
+
+# Create a namespaced alias so that existing target_link_libraries() calls
+# that reference protobuf::libprotobuf continue to work.
+if(NOT TARGET protobuf::libprotobuf)
+    if(TARGET libprotobuf)
+        add_library(protobuf::libprotobuf ALIAS libprotobuf)
+        message(STATUS "Using protobuf built from source (target: libprotobuf)")
+    elseif(TARGET protobuf)
+        add_library(protobuf::libprotobuf ALIAS protobuf)
+        message(STATUS "Using protobuf built from source (target: protobuf)")
+    else()
+        message(FATAL_ERROR "protobuf: neither libprotobuf nor protobuf target found")
+    endif()
+endif()
 add_subdirectory(${SRC}/fmtlib EXCLUDE_FROM_ALL)
 add_subdirectory(${SRC}/pcre EXCLUDE_FROM_ALL)
 add_subdirectory(${SRC}/libpng EXCLUDE_FROM_ALL)
