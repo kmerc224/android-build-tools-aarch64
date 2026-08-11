@@ -123,30 +123,34 @@ def clone_official_protobuf(src_dir: Path) -> None:
     )
     log(f"cloned official protobuf {protobuf_tag}")
 
-    # In v3.19.x, CMakeLists.txt is in cmake/ subdir with relative paths
-    # designed for that location. Copy it to root and fix all paths so
+    # In v3.19.x, CMakeLists.txt and all .cmake helper files live in cmake/
+    # subdir with relative paths (../src, ../configure.ac) designed for that
+    # location. Copy ALL of them to root and fix paths so
     # add_subdirectory(src/protobuf) works correctly.
-    cmake_file = protobuf_dir / "cmake" / "CMakeLists.txt"
-    cmake_dst = protobuf_dir / "CMakeLists.txt"
-    if cmake_file.exists() and not cmake_dst.exists():
-        text = cmake_file.read_text()
-        # ../src (from cmake/) -> src (from root)
-        text = text.replace("${CMAKE_CURRENT_SOURCE_DIR}/../src",
-                           "${CMAKE_CURRENT_SOURCE_DIR}/src")
-        text = text.replace("${CMAKE_CURRENT_SOURCE_DIR}/../cmake",
-                           "${CMAKE_CURRENT_SOURCE_DIR}/cmake")
-        # Fix bare ../src references
-        text = text.replace('"../src', '"${CMAKE_CURRENT_SOURCE_DIR}/src')
-        # ../configure.ac (from cmake/) -> configure.ac (from root)
-        text = text.replace("../configure.ac", "configure.ac")
-        # Prepend CMAKE_MODULE_PATH so include() calls find .cmake files
-        # in the cmake/ subdirectory (protobuf-options.cmake, libprotobuf.cmake, etc.)
-        text = text.replace(
-            "cmake_minimum_required(VERSION",
-            'list(APPEND CMAKE_MODULE_PATH "${CMAKE_CURRENT_SOURCE_DIR}/cmake")\ncmake_minimum_required(VERSION'
-        )
-        cmake_dst.write_text(text)
-        log("patched protobuf CMakeLists.txt: copied from cmake/ to root with fixed paths")
+    cmake_subdir = protobuf_dir / "cmake"
+    if cmake_subdir.is_dir() and not (protobuf_dir / "CMakeLists.txt").exists():
+        patched = 0
+        for f in cmake_subdir.glob("*.cmake"):
+            text = f.read_text()
+            text = text.replace("${CMAKE_CURRENT_SOURCE_DIR}/../src",
+                               "${CMAKE_CURRENT_SOURCE_DIR}/src")
+            text = text.replace('"../src', '"${CMAKE_CURRENT_SOURCE_DIR}/src')
+            text = text.replace("../configure.ac", "configure.ac")
+            (protobuf_dir / f.name).write_text(text)
+            patched += 1
+        # Also copy and patch CMakeLists.txt
+        cmakelists = cmake_subdir / "CMakeLists.txt"
+        if cmakelists.exists():
+            text = cmakelists.read_text()
+            text = text.replace("${CMAKE_CURRENT_SOURCE_DIR}/../src",
+                               "${CMAKE_CURRENT_SOURCE_DIR}/src")
+            text = text.replace("${CMAKE_CURRENT_SOURCE_DIR}/../cmake",
+                               "${CMAKE_CURRENT_SOURCE_DIR}/cmake")
+            text = text.replace('"../src', '"${CMAKE_CURRENT_SOURCE_DIR}/src')
+            text = text.replace("../configure.ac", "configure.ac")
+            (protobuf_dir / "CMakeLists.txt").write_text(text)
+            patched += 1
+        log(f"patched protobuf cmake: copied {patched} files from cmake/ to root with fixed paths")
 
 
 def link_protobuf_submodules(src_dir: Path) -> None:
