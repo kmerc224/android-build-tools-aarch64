@@ -1,0 +1,82 @@
+name: Download and Release
+
+on:
+  workflow_dispatch:
+    inputs:
+      download_url:
+        description: '要下载的 ROM 链接'
+        required: true
+        default: 'https://cdn.evolution-x.org/raphael/17/EvolutionX-17.0-20260812-raphael-12.1-Official.zip/download'
+      release_tag:
+        description: 'Release 标签名'
+        required: true
+        default: 'v17.0-20260812-raphael'
+      release_name:
+        description: 'Release 名称'
+        required: true
+        default: 'EvolutionX 17.0 - Raphael - 20260812'
+
+jobs:
+  download-and-release:
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Download ROM file (follow redirects)
+        run: |
+          echo "正在从指定链接下载文件..."
+          # 使用 curl -L 跟随重定向，-o 指定输出文件名
+          # -J 让 curl 自动从 Content-Disposition 头获取文件名（如果服务器提供的话）
+          curl -L -J -O \
+            --connect-timeout 30 \
+            --max-time 600 \
+            --retry 3 \
+            --retry-delay 5 \
+            "${{ github.event.inputs.download_url }}"
+
+          # 列出下载的文件，确认下载成功
+          echo "下载完成，当前目录文件："
+          ls -lh *.zip 2>/dev/null || ls -lh
+
+          # 找到下载的 zip 文件并设置环境变量
+          ZIP_FILE=$(ls -t *.zip 2>/dev/null | head -1)
+          if [ -z "$ZIP_FILE" ]; then
+            echo "错误：未找到下载的 zip 文件"
+            exit 1
+          fi
+          echo "ZIP_FILE=$ZIP_FILE" >> $GITHUB_ENV
+          echo "找到文件: $ZIP_FILE"
+
+      - name: Get file info
+        run: |
+          FILE_SIZE=$(stat -c%s "${{ env.ZIP_FILE }}")
+          FILE_SHA256=$(sha256sum "${{ env.ZIP_FILE }}" | awk '{print $1}')
+          echo "FILE_SIZE=$FILE_SIZE" >> $GITHUB_ENV
+          echo "FILE_SHA256=$FILE_SHA256" >> $GITHUB_ENV
+          echo "文件大小: $(( FILE_SIZE / 1024 / 1024 )) MB"
+          echo "SHA256: $FILE_SHA256"
+
+      - name: Create Release and Upload Asset
+        uses: softprops/action-gh-release@v2
+        with:
+          tag_name: ${{ github.event.inputs.release_tag }}
+          name: ${{ github.event.inputs.release_name }}
+          body: |
+            ## EvolutionX ROM
+
+            - **设备**: Raphael (Redmi K20 Pro / Mi 9T Pro)
+            - **版本**: 17.0
+            - **构建日期**: 20260812
+            - **文件大小**: ${{ env.FILE_SIZE }} bytes
+            - **SHA256**: `${{ env.FILE_SHA256 }}`
+            - **下载源**: ${{ github.event.inputs.download_url }}
+          draft: false
+          prerelease: false
+          files: |
+            ${{ env.ZIP_FILE }}
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
