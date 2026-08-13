@@ -67,7 +67,7 @@ jobs:
               console.log('正在导航到下载页面...');
 
               // 先设置下载事件监听，再导航（因为 URL 可能直接触发下载）
-              const downloadPromise = page.waitForDownload({ timeout: 300000 });
+              const downloadPromise = page.waitForEvent('download', { timeout: 300000 });
 
               try {
                 await page.goto('$URL', {
