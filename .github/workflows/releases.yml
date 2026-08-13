@@ -39,21 +39,47 @@ jobs:
           fi
           echo "目标文件名: $FILENAME"
 
-          # 下载文件，-L 跟随重定向，-o 指定输出文件名
-          # -f 让 curl 在 HTTP 错误时返回非零退出码
-          # -v 输出详细信息用于调试
+          # 模拟浏览器的 User-Agent，绕过 Cloudflare 反爬虫检测
+          UA="Mozilla/5.0 (X11; Linux x86_64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/127.0.0.0 Safari/537.36"
+
+          # 下载文件
+          # -L 跟随重定向
+          # -f HTTP 错误时返回非零退出码
+          # -A 设置 User-Agent
+          # --retry-all-errors 确保所有错误类型都重试
           echo "开始下载..."
           curl -L -f -v -o "$FILENAME" \
+            -A "$UA" \
             --connect-timeout 30 \
             --max-time 1800 \
             --retry 3 \
             --retry-delay 5 \
+            --retry-all-errors \
             "$URL"
 
           CURL_EXIT=$?
           if [ $CURL_EXIT -ne 0 ]; then
             echo "错误：curl 下载失败，退出码: $CURL_EXIT"
-            exit 1
+            echo "尝试不带 /download 后缀的 URL..."
+            # 有些 CDN 的 /download 路径会触发 Cloudflare 挑战
+            # 尝试直接下载文件 URL
+            DIRECT_URL=$(echo "$URL" | sed 's|/download$||')
+            if [ "$DIRECT_URL" != "$URL" ]; then
+              echo "尝试直接链接: $DIRECT_URL"
+              curl -L -f -v -o "$FILENAME" \
+                -A "$UA" \
+                --connect-timeout 30 \
+                --max-time 1800 \
+                --retry 3 \
+                --retry-delay 5 \
+                --retry-all-errors \
+                "$DIRECT_URL"
+              CURL_EXIT=$?
+            fi
+            if [ $CURL_EXIT -ne 0 ]; then
+              echo "错误：所有下载方式均失败，退出码: $CURL_EXIT"
+              exit 1
+            fi
           fi
 
           # 验证文件存在且大小大于 0
@@ -61,6 +87,21 @@ jobs:
             echo "错误：下载的文件不存在或为空"
             ls -lh "$FILENAME" 2>/dev/null
             exit 1
+          fi
+
+          # 验证文件是否为有效的 zip 文件（检查 magic bytes）
+          FILE_HEADER=$(xxd -l 4 -p "$FILENAME")
+          echo "文件头: $FILE_HEADER"
+          if [[ "$FILE_HEADER" != 504b0304* ]] && [[ "$FILE_HEADER" != 504b0506* ]]; then
+            echo "警告：文件可能不是有效的 ZIP 文件（magic bytes 不匹配）"
+            echo "文件内容前 500 字节："
+            head -c 500 "$FILENAME"
+            echo ""
+            # 如果是 HTML 页面（Cloudflare 挑战页面），退出
+            if file "$FILENAME" | grep -q "HTML"; then
+              echo "错误：下载的是 HTML 页面而非 ZIP 文件，可能被 Cloudflare 拦截"
+              exit 1
+            fi
           fi
 
           echo "ZIP_FILE=$FILENAME" >> $GITHUB_ENV
