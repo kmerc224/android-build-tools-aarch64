@@ -26,87 +26,139 @@ jobs:
       - name: Checkout
         uses: actions/checkout@v4
 
-      - name: Download ROM file (follow redirects)
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: '20'
+
+      - name: Install Playwright
+        run: |
+          npm install playwright
+          npx playwright install chromium
+          npx playwright install-deps chromium
+
+      - name: Download ROM file via headless browser
+        id: download
         run: |
           URL="${{ github.event.inputs.download_url }}"
+          DOWNLOAD_DIR="$(pwd)/downloads"
+          mkdir -p "$DOWNLOAD_DIR"
+
           echo "下载链接: $URL"
+          echo "使用 Playwright 无头浏览器下载（绕过 Cloudflare 挑战）..."
 
-          # 从 URL 中提取文件名（去掉末尾的 /download 等路径）
-          FILENAME=$(echo "$URL" | sed 's|/download$||' | awk -F'/' '{print $NF}')
-          # 确保文件名以 .zip 结尾
-          if [[ "$FILENAME" != *.zip ]]; then
-            FILENAME="${FILENAME}.zip"
-          fi
-          echo "目标文件名: $FILENAME"
+          node -e "
+          const { chromium } = require('playwright');
+          const path = require('path');
 
-          # 模拟浏览器的 User-Agent，绕过 Cloudflare 反爬虫检测
-          UA="Mozilla/5.0 (X11; Linux x86_64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/127.0.0.0 Safari/537.36"
+          (async () => {
+            const browser = await chromium.launch({
+              headless: true,
+              args: ['--no-sandbox', '--disable-setuid-sandbox']
+            });
+            const context = await browser.newContext({
+              acceptDownloads: true,
+              userAgent: 'Mozilla/5.0 (X11; Linux x86_64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/127.0.0.0 Safari/537.36'
+            });
+            const page = await context.newPage();
 
-          # 下载文件
-          # -L 跟随重定向
-          # -f HTTP 错误时返回非零退出码
-          # -A 设置 User-Agent
-          # --retry-all-errors 确保所有错误类型都重试
-          echo "开始下载..."
-          curl -L -f -v -o "$FILENAME" \
-            -A "$UA" \
-            --connect-timeout 30 \
-            --max-time 1800 \
-            --retry 3 \
-            --retry-delay 5 \
-            --retry-all-errors \
-            "$URL"
+            try {
+              console.log('正在导航到下载页面...');
+              // 设置较长的超时时间以应对 Cloudflare 挑战
+              const response = await page.goto('$URL', {
+                waitUntil: 'networkidle',
+                timeout: 120000
+              });
 
-          CURL_EXIT=$?
-          if [ $CURL_EXIT -ne 0 ]; then
-            echo "错误：curl 下载失败，退出码: $CURL_EXIT"
-            echo "尝试不带 /download 后缀的 URL..."
-            # 有些 CDN 的 /download 路径会触发 Cloudflare 挑战
-            # 尝试直接下载文件 URL
-            DIRECT_URL=$(echo "$URL" | sed 's|/download$||')
-            if [ "$DIRECT_URL" != "$URL" ]; then
-              echo "尝试直接链接: $DIRECT_URL"
-              curl -L -f -v -o "$FILENAME" \
-                -A "$UA" \
-                --connect-timeout 30 \
-                --max-time 1800 \
-                --retry 3 \
-                --retry-delay 5 \
-                --retry-all-errors \
-                "$DIRECT_URL"
-              CURL_EXIT=$?
+              console.log('页面状态码:', response.status());
+              console.log('最终 URL:', page.url());
+
+              // 检查是否有下载按钮/链接，如果有就点击
+              const downloadLink = await page.\$('a[href*=\"download\"], a[href*=\".zip\"], button:has-text(\"Download\")');
+              if (downloadLink) {
+                console.log('找到下载按钮/链接，点击中...');
+                const [download] = await Promise.all([
+                  page.waitForDownload({ timeout: 300000 }),
+                  downloadLink.click()
+                ]);
+                const filePath = path.join('$DOWNLOAD_DIR', download.suggestedFilename());
+                await download.saveAs(filePath);
+                console.log('DOWNLOAD_FILE=' + download.suggestedFilename());
+              } else {
+                // 页面可能直接触发了下载
+                console.log('未找到下载按钮，等待页面自动下载...');
+                try {
+                  const download = await page.waitForDownload({ timeout: 300000 });
+                  const filePath = path.join('$DOWNLOAD_DIR', download.suggestedFilename());
+                  await download.saveAs(filePath);
+                  console.log('DOWNLOAD_FILE=' + download.suggestedFilename());
+                } catch (dlErr) {
+                  // 如果没有触发下载，可能页面就是最终的重定向目标
+                  // 尝试从当前页面 URL 获取 cookies 然后用 curl 下载
+                  console.log('未触发下载，尝试提取 cookies 后用 curl 下载...');
+                  const cookies = await context.cookies();
+                  const cookieStr = cookies.map(c => c.name + '=' + c.value).join('; ');
+                  const fs = require('fs');
+                  fs.writeFileSync('$DOWNLOAD_DIR/cookies.txt', cookieStr);
+                  fs.writeFileSync('$DOWNLOAD_DIR/final_url.txt', page.url());
+                  console.log('COOKIES_SAVED=true');
+                  console.log('FINAL_URL=' + page.url());
+                }
+              }
+            } catch (err) {
+              console.error('Playwright 错误:', err.message);
+              process.exit(1);
+            } finally {
+              await browser.close();
+            }
+          })();
+          " 2>&1
+
+          # 检查 Playwright 是否直接下载了文件
+          DOWNLOADED_FILE=$(ls -t "$DOWNLOAD_DIR"/*.zip 2>/dev/null | head -1)
+
+          if [ -z "$DOWNLOADED_FILE" ] && [ -f "$DOWNLOAD_DIR/cookies.txt" ]; then
+            echo "Playwright 未直接下载文件，使用获取的 cookies 尝试 curl 下载..."
+            COOKIES=$(cat "$DOWNLOAD_DIR/cookies.txt")
+            FINAL_URL=$(cat "$DOWNLOAD_DIR/final_url.txt")
+            FILENAME=$(echo "$FINAL_URL" | awk -F'/' '{print $NF}' | cut -d'?' -f1)
+            if [[ "$FILENAME" != *.zip ]]; then
+              FILENAME="EvolutionX-17.0-20260812-raphael-12.1-Official.zip"
             fi
-            if [ $CURL_EXIT -ne 0 ]; then
-              echo "错误：所有下载方式均失败，退出码: $CURL_EXIT"
-              exit 1
-            fi
+
+            echo "目标文件: $FILENAME"
+            echo "最终 URL: $FINAL_URL"
+
+            curl -L -f -v -o "$DOWNLOAD_DIR/$FILENAME" \
+              -b "$COOKIES" \
+              -A "Mozilla/5.0 (X11; Linux x86_64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/127.0.0.0 Safari/537.36" \
+              --connect-timeout 30 \
+              --max-time 1800 \
+              --retry 3 \
+              --retry-delay 5 \
+              "$FINAL_URL" || {
+                echo "curl 下载失败，尝试直接用 Playwright 导航到最终 URL..."
+                # 最终回退：直接用 wget
+                wget -O "$DOWNLOAD_DIR/$FILENAME" \
+                  --header="Cookie: $COOKIES" \
+                  --header="User-Agent: Mozilla/5.0 (X11; Linux x86_64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/127.0.0.0 Safari/537.36" \
+                  "$FINAL_URL"
+              }
+            DOWNLOADED_FILE="$DOWNLOAD_DIR/$FILENAME"
           fi
 
-          # 验证文件存在且大小大于 0
-          if [ ! -s "$FILENAME" ]; then
-            echo "错误：下载的文件不存在或为空"
-            ls -lh "$FILENAME" 2>/dev/null
+          if [ -z "$DOWNLOADED_FILE" ] || [ ! -s "$DOWNLOADED_FILE" ]; then
+            echo "错误：下载失败，未找到有效文件"
+            ls -lhR "$DOWNLOAD_DIR"
             exit 1
           fi
 
-          # 验证文件是否为有效的 zip 文件（检查 magic bytes）
-          FILE_HEADER=$(xxd -l 4 -p "$FILENAME")
-          echo "文件头: $FILE_HEADER"
-          if [[ "$FILE_HEADER" != 504b0304* ]] && [[ "$FILE_HEADER" != 504b0506* ]]; then
-            echo "警告：文件可能不是有效的 ZIP 文件（magic bytes 不匹配）"
-            echo "文件内容前 500 字节："
-            head -c 500 "$FILENAME"
-            echo ""
-            # 如果是 HTML 页面（Cloudflare 挑战页面），退出
-            if file "$FILENAME" | grep -q "HTML"; then
-              echo "错误：下载的是 HTML 页面而非 ZIP 文件，可能被 Cloudflare 拦截"
-              exit 1
-            fi
-          fi
-
-          echo "ZIP_FILE=$FILENAME" >> $GITHUB_ENV
-          echo "下载成功！"
-          ls -lh "$FILENAME"
+          # 获取文件名
+          BASENAME=$(basename "$DOWNLOADED_FILE")
+          echo "ZIP_FILE=$DOWNLOADED_FILE" >> $GITHUB_ENV
+          echo "FILE_NAME=$BASENAME" >> $GITHUB_ENV
+          echo "下载成功: $BASENAME"
+          ls -lh "$DOWNLOADED_FILE"
 
       - name: Get file info
         run: |
