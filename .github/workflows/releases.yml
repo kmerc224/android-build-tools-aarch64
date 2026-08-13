@@ -50,6 +50,7 @@ jobs:
           node -e "
           const { chromium } = require('playwright');
           const path = require('path');
+          const fs = require('fs');
 
           (async () => {
             const browser = await chromium.launch({
@@ -64,49 +65,51 @@ jobs:
 
             try {
               console.log('正在导航到下载页面...');
-              // 设置较长的超时时间以应对 Cloudflare 挑战
-              const response = await page.goto('$URL', {
-                waitUntil: 'networkidle',
-                timeout: 120000
-              });
 
-              console.log('页面状态码:', response.status());
-              console.log('最终 URL:', page.url());
+              // 先设置下载事件监听，再导航（因为 URL 可能直接触发下载）
+              const downloadPromise = page.waitForDownload({ timeout: 300000 });
 
-              // 检查是否有下载按钮/链接，如果有就点击
-              const downloadLink = await page.\$('a[href*=\"download\"], a[href*=\".zip\"], button:has-text(\"Download\")');
-              if (downloadLink) {
-                console.log('找到下载按钮/链接，点击中...');
-                const [download] = await Promise.all([
-                  page.waitForDownload({ timeout: 300000 }),
-                  downloadLink.click()
-                ]);
-                const filePath = path.join('$DOWNLOAD_DIR', download.suggestedFilename());
-                await download.saveAs(filePath);
-                console.log('DOWNLOAD_FILE=' + download.suggestedFilename());
-              } else {
-                // 页面可能直接触发了下载
-                console.log('未找到下载按钮，等待页面自动下载...');
-                try {
-                  const download = await page.waitForDownload({ timeout: 300000 });
-                  const filePath = path.join('$DOWNLOAD_DIR', download.suggestedFilename());
-                  await download.saveAs(filePath);
-                  console.log('DOWNLOAD_FILE=' + download.suggestedFilename());
-                } catch (dlErr) {
-                  // 如果没有触发下载，可能页面就是最终的重定向目标
-                  // 尝试从当前页面 URL 获取 cookies 然后用 curl 下载
-                  console.log('未触发下载，尝试提取 cookies 后用 curl 下载...');
-                  const cookies = await context.cookies();
-                  const cookieStr = cookies.map(c => c.name + '=' + c.value).join('; ');
-                  const fs = require('fs');
-                  fs.writeFileSync('$DOWNLOAD_DIR/cookies.txt', cookieStr);
-                  fs.writeFileSync('$DOWNLOAD_DIR/final_url.txt', page.url());
-                  console.log('COOKIES_SAVED=true');
-                  console.log('FINAL_URL=' + page.url());
+              try {
+                await page.goto('$URL', {
+                  waitUntil: 'commit',
+                  timeout: 120000
+                });
+              } catch (navErr) {
+                // 'Download is starting' 不是真正的错误，说明下载已触发
+                if (navErr.message.includes('Download')) {
+                  console.log('检测到下载已触发: ' + navErr.message);
+                } else {
+                  throw navErr;
                 }
               }
+
+              // 等待下载完成
+              console.log('等待下载完成...');
+              const download = await downloadPromise;
+              const suggestedName = download.suggestedFilename();
+              const fileName = suggestedName && suggestedName !== 'download'
+                ? suggestedName
+                : 'EvolutionX-17.0-20260812-raphael-12.1-Official.zip';
+              const filePath = path.join('$DOWNLOAD_DIR', fileName);
+
+              console.log('保存文件: ' + fileName);
+              await download.saveAs(filePath);
+              console.log('DOWNLOAD_FILE=' + fileName);
+              console.log('下载完成!');
+
             } catch (err) {
               console.error('Playwright 错误:', err.message);
+              // 如果 Playwright 失败，保存 cookies 供 curl 回退
+              try {
+                const cookies = await context.cookies();
+                const cookieStr = cookies.map(c => c.name + '=' + c.value).join('; ');
+                fs.writeFileSync('$DOWNLOAD_DIR/cookies.txt', cookieStr);
+                fs.writeFileSync('$DOWNLOAD_DIR/final_url.txt', page.url());
+                console.log('COOKIES_SAVED=true');
+                console.log('FINAL_URL=' + page.url());
+              } catch (e) {
+                console.error('保存 cookies 失败:', e.message);
+              }
               process.exit(1);
             } finally {
               await browser.close();
