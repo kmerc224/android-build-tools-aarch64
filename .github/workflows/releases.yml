@@ -172,6 +172,33 @@ jobs:
           echo "文件大小: $(( FILE_SIZE / 1024 / 1024 )) MB"
           echo "SHA256: $FILE_SHA256"
 
+      - name: Split file if exceeds 2GB
+        id: split
+        run: |
+          FILE="${{ env.ZIP_FILE }}"
+          FILE_SIZE=$(stat -c%s "$FILE")
+          MAX_SIZE=2000000000  # 2GB in bytes (GitHub Release limit is 2147483648)
+
+          if [ "$FILE_SIZE" -gt "$MAX_SIZE" ]; then
+            echo "文件大小 $(($FILE_SIZE / 1024 / 1024))MB 超过 2GB 限制，正在分卷..."
+            SPLIT_DIR="$(pwd)/split_parts"
+            mkdir -p "$SPLIT_DIR"
+            # 分卷为 1.9GB 的块，确保每块都在限制内
+            split -b 1900m "$FILE" "$SPLIT_DIR/part_"
+            # 为分卷文件添加 .zip 扩展名以便上传
+            for f in "$SPLIT_DIR"/part_*; do
+              mv "$f" "${f}.zip"
+            done
+            echo "分卷完成："
+            ls -lh "$SPLIT_DIR"
+            echo "SPLIT=true" >> $GITHUB_ENV
+            echo "SPLIT_DIR=$SPLIT_DIR" >> $GITHUB_ENV
+            echo "PART_COUNT=$(ls "$SPLIT_DIR"/*.zip | wc -l)" >> $GITHUB_ENV
+          else
+            echo "文件大小 $(($FILE_SIZE / 1024 / 1024))MB 未超过限制，无需分卷"
+            echo "SPLIT=false" >> $GITHUB_ENV
+          fi
+
       - name: Create Release and Upload Asset
         uses: softprops/action-gh-release@v2
         with:
@@ -183,12 +210,13 @@ jobs:
             - **设备**: Raphael (Redmi K20 Pro / Mi 9T Pro)
             - **版本**: 17.0
             - **构建日期**: 20260812
-            - **文件大小**: ${{ env.FILE_SIZE }} bytes
+            - **文件大小**: ${{ env.FILE_SIZE }} bytes (${{ env.FILE_NAME }})
             - **SHA256**: `${{ env.FILE_SHA256 }}`
             - **下载源**: ${{ github.event.inputs.download_url }}
+            ${{ env.SPLIT == 'true' && '- **注意**: 文件超过 2GB，已分卷上传。下载所有分卷后合并：`cat part_*.zip > original.zip`' || '' }}
           draft: false
           prerelease: false
           files: |
-            ${{ env.ZIP_FILE }}
+            ${{ env.SPLIT == 'true' && format('{0}/*.zip', env.SPLIT_DIR) || env.ZIP_FILE }}
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
