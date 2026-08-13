@@ -28,28 +28,44 @@ jobs:
 
       - name: Download ROM file (follow redirects)
         run: |
-          echo "正在从指定链接下载文件..."
-          # 使用 curl -L 跟随重定向，-o 指定输出文件名
-          # -J 让 curl 自动从 Content-Disposition 头获取文件名（如果服务器提供的话）
-          curl -L -J -O \
+          URL="${{ github.event.inputs.download_url }}"
+          echo "下载链接: $URL"
+
+          # 从 URL 中提取文件名（去掉末尾的 /download 等路径）
+          FILENAME=$(echo "$URL" | sed 's|/download$||' | awk -F'/' '{print $NF}')
+          # 确保文件名以 .zip 结尾
+          if [[ "$FILENAME" != *.zip ]]; then
+            FILENAME="${FILENAME}.zip"
+          fi
+          echo "目标文件名: $FILENAME"
+
+          # 下载文件，-L 跟随重定向，-o 指定输出文件名
+          # -f 让 curl 在 HTTP 错误时返回非零退出码
+          # -v 输出详细信息用于调试
+          echo "开始下载..."
+          curl -L -f -v -o "$FILENAME" \
             --connect-timeout 30 \
-            --max-time 600 \
+            --max-time 1800 \
             --retry 3 \
             --retry-delay 5 \
-            "${{ github.event.inputs.download_url }}"
+            "$URL"
 
-          # 列出下载的文件，确认下载成功
-          echo "下载完成，当前目录文件："
-          ls -lh *.zip 2>/dev/null || ls -lh
-
-          # 找到下载的 zip 文件并设置环境变量
-          ZIP_FILE=$(ls -t *.zip 2>/dev/null | head -1)
-          if [ -z "$ZIP_FILE" ]; then
-            echo "错误：未找到下载的 zip 文件"
+          CURL_EXIT=$?
+          if [ $CURL_EXIT -ne 0 ]; then
+            echo "错误：curl 下载失败，退出码: $CURL_EXIT"
             exit 1
           fi
-          echo "ZIP_FILE=$ZIP_FILE" >> $GITHUB_ENV
-          echo "找到文件: $ZIP_FILE"
+
+          # 验证文件存在且大小大于 0
+          if [ ! -s "$FILENAME" ]; then
+            echo "错误：下载的文件不存在或为空"
+            ls -lh "$FILENAME" 2>/dev/null
+            exit 1
+          fi
+
+          echo "ZIP_FILE=$FILENAME" >> $GITHUB_ENV
+          echo "下载成功！"
+          ls -lh "$FILENAME"
 
       - name: Get file info
         run: |
